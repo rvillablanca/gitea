@@ -40,5 +40,9 @@
 	<button type="submit" class="ui green button">
 		{{.i18n.Tr "repo.editor.commit_changes"}}
 	</button>
-	<a class="ui button red" href="{{EscapePound $.BranchLink}}/{{EscapePound .TreePath}}">{{.i18n.Tr "repo.editor.cancel"}}</a>
+	{{if not .Repository.IsBare}}
+		<a class="ui button red" href="{{EscapePound $.BranchLink}}/{{EscapePound .TreePath}}">{{.i18n.Tr "repo.editor.cancel"}}</a>
+	{{else}}
+		<a class="ui button red" href="{{EscapePound $.BranchLink}}/">{{.i18n.Tr "repo.editor.cancel"}}</a>
+	{{end}}
 </div>

@@ -135,6 +135,12 @@ func (r *Repository) BranchNameSubURL() string {
 // GetEditorconfig returns the .editorconfig definition if found in the
 // HEAD of the default repo branch.
 func (r *Repository) GetEditorconfig() (*editorconfig.Editorconfig, error) {
+
+	if r.Repository.IsBare {
+		//All repo information is not found since repo is bare
+		return nil, git.ErrNotExist{ID: "", RelPath: ".editorconfig"}
+	}
+
 	commit, err := r.GitRepo.GetBranchCommit(r.Repository.DefaultBranch)
 	if err != nil {
 		return nil, err

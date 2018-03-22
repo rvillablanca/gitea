@@ -295,6 +295,13 @@ func renderCode(ctx *context.Context) {
 	ctx.Data["PageIsViewCode"] = true
 
 	if ctx.Repo.Repository.IsBare {
+		// Check permission to add or upload new file.
+		if ctx.Repo.IsWriter() /*&& ctx.Repo.IsViewBranch*/ {
+
+			ctx.Data["CanAddFile"] = true
+			ctx.Data["CanUploadFile"] = setting.Repository.Upload.Enabled
+		}
+
 		ctx.HTML(200, tplRepoBARE)
 		return
 	}

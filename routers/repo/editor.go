@@ -127,7 +127,11 @@ func editFile(ctx *context.Context, isNewFile bool) {
 		ctx.Data["commit_choice"] = frmCommitChoiceNewBranch
 	}
 	ctx.Data["new_branch_name"] = ""
-	ctx.Data["last_commit"] = ctx.Repo.Commit.ID
+
+	//Now is possible to create or upload a file within bare repo, then no commits could exists
+	if ctx.Repo.Commit != nil {
+		ctx.Data["last_commit"] = ctx.Repo.Commit.ID
+	}
 	ctx.Data["MarkdownFileExts"] = strings.Join(setting.Markdown.FileExtensions, ",")
 	ctx.Data["LineWrapExtensions"] = strings.Join(setting.Repository.Editor.LineWrapExtensions, ",")
 	ctx.Data["PreviewableFileModes"] = strings.Join(setting.Repository.Editor.PreviewableFileModes, ",")
@@ -157,6 +161,8 @@ func editFilePost(ctx *context.Context, form auth.EditRepoFileForm, isNewFile bo
 	branchName := oldBranchName
 	oldTreePath := ctx.Repo.TreePath
 	lastCommit := form.LastCommit
+
+
 	form.LastCommit = ctx.Repo.Commit.ID.String()
 
 	if form.CommitChoice == frmCommitChoiceNewBranch {
