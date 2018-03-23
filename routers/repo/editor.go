@@ -19,6 +19,7 @@ import (
 	"code.gitea.io/gitea/modules/log"
 	"code.gitea.io/gitea/modules/setting"
 	"code.gitea.io/gitea/modules/templates"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -162,8 +163,9 @@ func editFilePost(ctx *context.Context, form auth.EditRepoFileForm, isNewFile bo
 	oldTreePath := ctx.Repo.TreePath
 	lastCommit := form.LastCommit
 
-
-	form.LastCommit = ctx.Repo.Commit.ID.String()
+	if ctx.Repo.Commit != nil {
+		form.LastCommit = ctx.Repo.Commit.ID.String()
+	}
 
 	if form.CommitChoice == frmCommitChoiceNewBranch {
 		branchName = form.NewBranchName
@@ -211,34 +213,38 @@ func editFilePost(ctx *context.Context, form auth.EditRepoFileForm, isNewFile bo
 	}
 
 	var newTreePath string
-	for index, part := range treeNames {
-		newTreePath = path.Join(newTreePath, part)
-		entry, err := ctx.Repo.Commit.GetTreeEntryByPath(newTreePath)
-		if err != nil {
-			if git.IsErrNotExist(err) {
-				// Means there is no item with that name, so we're good
-				break
-			}
 
-			ctx.ServerError("Repo.Commit.GetTreeEntryByPath", err)
-			return
-		}
-		if index != len(treeNames)-1 {
-			if !entry.IsDir() {
-				ctx.Data["Err_TreePath"] = true
-				ctx.RenderWithErr(ctx.Tr("repo.editor.directory_is_a_file", part), tplEditFile, &form)
+	// If the repository is bare then there is no need to check for repeated file
+	if !ctx.Repo.Repository.IsBare {
+		for index, part := range treeNames {
+			newTreePath = path.Join(newTreePath, part)
+			entry, err := ctx.Repo.Commit.GetTreeEntryByPath(newTreePath)
+			if err != nil {
+				if git.IsErrNotExist(err) {
+					// Means there is no item with that name, so we're good
+					break
+				}
+
+				ctx.ServerError("Repo.Commit.GetTreeEntryByPath", err)
 				return
 			}
-		} else {
-			if entry.IsLink() {
-				ctx.Data["Err_TreePath"] = true
-				ctx.RenderWithErr(ctx.Tr("repo.editor.file_is_a_symlink", part), tplEditFile, &form)
-				return
-			}
-			if entry.IsDir() {
-				ctx.Data["Err_TreePath"] = true
-				ctx.RenderWithErr(ctx.Tr("repo.editor.filename_is_a_directory", part), tplEditFile, &form)
-				return
+			if index != len(treeNames)-1 {
+				if !entry.IsDir() {
+					ctx.Data["Err_TreePath"] = true
+					ctx.RenderWithErr(ctx.Tr("repo.editor.directory_is_a_file", part), tplEditFile, &form)
+					return
+				}
+			} else {
+				if entry.IsLink() {
+					ctx.Data["Err_TreePath"] = true
+					ctx.RenderWithErr(ctx.Tr("repo.editor.file_is_a_symlink", part), tplEditFile, &form)
+					return
+				}
+				if entry.IsDir() {
+					ctx.Data["Err_TreePath"] = true
+					ctx.RenderWithErr(ctx.Tr("repo.editor.filename_is_a_directory", part), tplEditFile, &form)
+					return
+				}
 			}
 		}
 	}
@@ -270,19 +276,22 @@ func editFilePost(ctx *context.Context, form auth.EditRepoFileForm, isNewFile bo
 		}
 	}
 
-	if oldTreePath != form.TreePath {
-		// We have a new filename (rename or completely new file) so we need to make sure it doesn't already exist, can't clobber.
-		entry, err := ctx.Repo.Commit.GetTreeEntryByPath(form.TreePath)
-		if err != nil {
-			if !git.IsErrNotExist(err) {
-				ctx.ServerError("GetTreeEntryByPath", err)
+	// If the repository is bare then there is no need to check for repeated file
+	if !ctx.Repo.Repository.IsBare {
+		if oldTreePath != form.TreePath {
+			// We have a new filename (rename or completely new file) so we need to make sure it doesn't already exist, can't clobber.
+			entry, err := ctx.Repo.Commit.GetTreeEntryByPath(form.TreePath)
+			if err != nil {
+				if !git.IsErrNotExist(err) {
+					ctx.ServerError("GetTreeEntryByPath", err)
+					return
+				}
+			}
+			if entry != nil {
+				ctx.Data["Err_TreePath"] = true
+				ctx.RenderWithErr(ctx.Tr("repo.editor.file_already_exists", form.TreePath), tplEditFile, &form)
 				return
 			}
-		}
-		if entry != nil {
-			ctx.Data["Err_TreePath"] = true
-			ctx.RenderWithErr(ctx.Tr("repo.editor.file_already_exists", form.TreePath), tplEditFile, &form)
-			return
 		}
 	}
 
@@ -298,6 +307,16 @@ func editFilePost(ctx *context.Context, form auth.EditRepoFileForm, isNewFile bo
 	form.CommitMessage = strings.TrimSpace(form.CommitMessage)
 	if len(form.CommitMessage) > 0 {
 		message += "\n\n" + form.CommitMessage
+	}
+
+	//Before add new file, the new branch must be created
+	if ctx.Repo.Repository.IsBare {
+		if err := createNewBranchForBareRepo(ctx, branchName); err != nil {
+			//@todo Improve this error message
+			ctx.Data["Err_TreePath"] = true
+			ctx.RenderWithErr(ctx.Tr("repo.editor.fail_to_update_file", form.TreePath, err), tplEditFile, &form)
+			return
+		}
 	}
 
 	if err := ctx.Repo.Repository.UpdateRepoFile(ctx.User, models.UpdateRepoFileOptions{
@@ -316,6 +335,14 @@ func editFilePost(ctx *context.Context, form auth.EditRepoFileForm, isNewFile bo
 	}
 
 	ctx.Redirect(ctx.Repo.RepoLink + "/src/branch/" + branchName + "/" + strings.NewReplacer("%", "%25", "#", "%23", " ", "%20", "?", "%3F").Replace(form.TreePath))
+}
+
+func createNewBranchForBareRepo(ctx *context.Context, branchName string) error {
+	if !ctx.Repo.CanCreateBranch() {
+		return errors.New(fmt.Sprintf("User cannot create branch %s", branchName))
+	}
+
+	return ctx.Repo.Repository.CreateNewBranchOnBare(ctx.User, branchName)
 }
 
 // EditFilePost response for editing file

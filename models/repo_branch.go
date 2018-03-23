@@ -122,6 +122,28 @@ func (repo *Repository) CreateNewBranch(doer *User, oldBranchName, branchName st
 	return nil
 }
 
+// CreateNewBranch creates a new repository branch on a bare repository
+func (repo *Repository) CreateNewBranchOnBare(doer *User, branchName string) (err error) {
+	repoWorkingPool.CheckIn(com.ToStr(repo.ID))
+	defer repoWorkingPool.CheckOut(com.ToStr(repo.ID))
+
+	// Check if branch name can be used
+	if err := repo.CheckBranchName(branchName); err != nil {
+		return err
+	}
+
+	localPath := repo.LocalCopyPath()
+
+	if err = git.Push(localPath, git.PushOptions{
+		Remote: "origin",
+		Branch: branchName,
+	}); err != nil {
+		return fmt.Errorf("Push: %v", err)
+	}
+
+	return nil
+}
+
 // updateLocalCopyToCommit pulls latest changes of given commit from repoPath to localPath.
 // It creates a new clone if local copy does not exist.
 // This function checks out target commit by default, it is safe to assume subsequent
