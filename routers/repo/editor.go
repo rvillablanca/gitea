@@ -311,12 +311,13 @@ func editFilePost(ctx *context.Context, form auth.EditRepoFileForm, isNewFile bo
 
 	//Before add new file, the new branch must be created
 	if ctx.Repo.Repository.IsBare {
-		if err := createNewBranchForBareRepo(ctx, branchName); err != nil {
-			//@todo Improve this error message
-			ctx.Data["Err_TreePath"] = true
-			ctx.RenderWithErr(ctx.Tr("repo.editor.fail_to_update_file", form.TreePath, err), tplEditFile, &form)
-			return
-		}
+		//if err := createNewBranchForBareRepo(ctx, branchName); err != nil {
+		//	//@todo Improve this error message
+		//	ctx.Data["Err_TreePath"] = true
+		//	ctx.RenderWithErr(ctx.Tr("repo.editor.fail_to_update_file", form.TreePath, err), tplEditFile, &form)
+		//	return
+		//}
+		oldBranchName = branchName
 	}
 
 	if err := ctx.Repo.Repository.UpdateRepoFile(ctx.User, models.UpdateRepoFileOptions{

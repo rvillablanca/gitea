@@ -133,6 +133,7 @@ func (repo *Repository) CreateNewBranchOnBare(doer *User, branchName string) (er
 	}
 
 	localPath := repo.LocalCopyPath()
+	git.InitRepository("", false)
 
 	if err = git.Push(localPath, git.PushOptions{
 		Remote: "origin",
