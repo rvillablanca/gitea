@@ -1271,6 +1271,38 @@ func initRepository(e Engine, repoPath string, u *User, repo *Repository, opts C
 	return nil
 }
 
+func initBareRepository(repoPath string, u *User, repo *Repository, opts UpdateBareRepoFileOptions) (err error) {
+
+	tmpDir := filepath.Join(os.TempDir(), "gitea-"+repo.Name+"-"+com.ToStr(time.Now().Nanosecond()))
+
+	if err := os.MkdirAll(tmpDir, os.ModePerm); err != nil {
+		return fmt.Errorf("Failed to create dir %s: %v", tmpDir, err)
+	}
+
+	defer os.RemoveAll(tmpDir)
+
+	// Clone to temporary path and do the init commit.
+	_, stderr, err := process.GetManager().Exec(
+		fmt.Sprintf("initRepository(git clone): %s", repoPath),
+		"git", "clone", repoPath, tmpDir,
+	)
+	if err != nil {
+		return fmt.Errorf("git clone: %v - %s", err, stderr)
+	}
+
+	if err = ioutil.WriteFile(filepath.Join(tmpDir, opts.NewTreeName),
+		[]byte(opts.Content), 0644); err != nil {
+		return fmt.Errorf("error writing: %v", err)
+	}
+
+	// Apply changes and commit.
+	if err = initRepoCommit(tmpDir, u.NewGitSig()); err != nil {
+		return fmt.Errorf("initRepoCommit: %v", err)
+	}
+
+	return nil
+}
+
 var (
 	reservedRepoNames    = []string{".", ".."}
 	reservedRepoPatterns = []string{"*.git", "*.wiki"}

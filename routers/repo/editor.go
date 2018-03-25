@@ -19,7 +19,6 @@ import (
 	"code.gitea.io/gitea/modules/log"
 	"code.gitea.io/gitea/modules/setting"
 	"code.gitea.io/gitea/modules/templates"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -62,6 +61,10 @@ func editFile(ctx *context.Context, isNewFile bool) {
 	ctx.Data["RequireHighlightJS"] = true
 	ctx.Data["RequireSimpleMDE"] = true
 	canCommit := renderCommitRights(ctx)
+
+	if ctx.Repo.Repository.IsBare {
+		canCommit = true
+	}
 
 	treeNames, treePaths := getParentTreeFields(ctx.Repo.TreePath)
 
@@ -130,13 +133,15 @@ func editFile(ctx *context.Context, isNewFile bool) {
 	ctx.Data["new_branch_name"] = ""
 
 	//Now is possible to create or upload a file within bare repo, then no commits could exists
-	if ctx.Repo.Commit != nil {
+	if !ctx.Repo.Repository.IsBare {
 		ctx.Data["last_commit"] = ctx.Repo.Commit.ID
 	}
 	ctx.Data["MarkdownFileExts"] = strings.Join(setting.Markdown.FileExtensions, ",")
 	ctx.Data["LineWrapExtensions"] = strings.Join(setting.Repository.Editor.LineWrapExtensions, ",")
 	ctx.Data["PreviewableFileModes"] = strings.Join(setting.Repository.Editor.PreviewableFileModes, ",")
 	ctx.Data["EditorconfigURLPrefix"] = fmt.Sprintf("%s/api/v1/repos/%s/editorconfig/", setting.AppSubURL, ctx.Repo.Repository.FullName())
+
+	ctx.Data["IsBare"] = ctx.Repo.Repository.IsBare
 
 	ctx.HTML(200, tplEditFile)
 }
@@ -309,18 +314,18 @@ func editFilePost(ctx *context.Context, form auth.EditRepoFileForm, isNewFile bo
 		message += "\n\n" + form.CommitMessage
 	}
 
-	//Before add new file, the new branch must be created
 	if ctx.Repo.Repository.IsBare {
-		//if err := createNewBranchForBareRepo(ctx, branchName); err != nil {
-		//	//@todo Improve this error message
-		//	ctx.Data["Err_TreePath"] = true
-		//	ctx.RenderWithErr(ctx.Tr("repo.editor.fail_to_update_file", form.TreePath, err), tplEditFile, &form)
-		//	return
-		//}
-		oldBranchName = branchName
-	}
-
-	if err := ctx.Repo.Repository.UpdateRepoFile(ctx.User, models.UpdateRepoFileOptions{
+		if err := ctx.Repo.Repository.UpdateBareRepositoryFile(ctx.User, models.UpdateBareRepoFileOptions{
+			Content:     strings.Replace(form.Content, "\r", "", -1),
+			NewTreeName: form.TreePath,
+			Message:     message,
+			NewBranch:   branchName,
+		}); err != nil {
+			ctx.Data["Err_TreePath"] = true
+			ctx.RenderWithErr(ctx.Tr("repo.editor.fail_to_update_file", form.TreePath, err), tplEditFile, &form)
+			return
+		}
+	} else if err := ctx.Repo.Repository.UpdateRepoFile(ctx.User, models.UpdateRepoFileOptions{
 		LastCommitID: lastCommit,
 		OldBranch:    oldBranchName,
 		NewBranch:    branchName,
@@ -336,14 +341,6 @@ func editFilePost(ctx *context.Context, form auth.EditRepoFileForm, isNewFile bo
 	}
 
 	ctx.Redirect(ctx.Repo.RepoLink + "/src/branch/" + branchName + "/" + strings.NewReplacer("%", "%25", "#", "%23", " ", "%20", "?", "%3F").Replace(form.TreePath))
-}
-
-func createNewBranchForBareRepo(ctx *context.Context, branchName string) error {
-	if !ctx.Repo.CanCreateBranch() {
-		return errors.New(fmt.Sprintf("User cannot create branch %s", branchName))
-	}
-
-	return ctx.Repo.Repository.CreateNewBranchOnBare(ctx.User, branchName)
 }
 
 // EditFilePost response for editing file

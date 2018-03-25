@@ -72,6 +72,13 @@ func (repo *Repository) CheckoutNewBranch(oldBranch, newBranch string) error {
 	return checkoutNewBranch(repo.RepoPath(), repo.LocalCopyPath(), oldBranch, newBranch)
 }
 
+type UpdateBareRepoFileOptions struct {
+	NewBranch    string
+	NewTreeName  string
+	Message      string
+	Content      string
+}
+
 // UpdateRepoFileOptions holds the repository file update options
 type UpdateRepoFileOptions struct {
 	LastCommitID string
@@ -82,6 +89,13 @@ type UpdateRepoFileOptions struct {
 	Message      string
 	Content      string
 	IsNewFile    bool
+}
+
+func (repo *Repository) UpdateBareRepositoryFile(doer *User, opts UpdateBareRepoFileOptions) error {
+	repoWorkingPool.CheckIn(com.ToStr(repo.ID))
+	defer repoWorkingPool.CheckOut(com.ToStr(repo.ID))
+
+	return initBareRepository(repo.RepoPath(), doer, repo, opts)
 }
 
 // UpdateRepoFile adds or updates a file in repository.
